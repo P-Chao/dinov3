@@ -4,11 +4,13 @@
 # the terms of the DINOv3 License Agreement.
 
 from functools import partial
+from typing import Dict, Tuple, List
 
 import torch
 
 from dinov3.eval.segmentation.models.backbone.dinov3_adapter import DINOv3_Adapter
 from dinov3.eval.segmentation.models.heads.mask2former_head import Mask2FormerHead
+from dinov3.eval.segmentation.models.heads.upernet_head import UPerHead
 
 
 BACKBONE_INTERMEDIATE_LAYERS = {
@@ -16,6 +18,13 @@ BACKBONE_INTERMEDIATE_LAYERS = {
     "dinov3_vitb16": [2, 5, 8, 11],
     "dinov3_vitl16": [4, 11, 17, 23],
     "dinov3_vit7b16": [9, 19, 29, 39],
+}
+
+BACKBONE_CHANNELS = {
+    "dinov3_vits16": [384, 384, 384, 384],  # For ViT-S
+    "dinov3_vitb16": [768, 768, 768, 768],  # For ViT-B
+    "dinov3_vitl16": [1024, 1024, 1024, 1024],  # For ViT-L
+    "dinov3_vit7b16": [1536, 1536, 1536, 1536],  # For ViT-7B
 }
 
 
@@ -64,6 +73,27 @@ def build_segmentation_decoder(
                 "4": [embed_dim, int(patch_size / 2), int(patch_size / 2), 4],
             },
             hidden_dim=hidden_dim,
+            num_classes=num_classes,
+            ignore_value=255,
+        )
+    elif decoder_type == "upernet":
+        backbone_model = DINOv3_Adapter(
+            backbone_model,
+            interaction_indexes=BACKBONE_INTERMEDIATE_LAYERS[backbone_name],
+        )
+        backbone_model.eval()
+        embed_dim = backbone_model.backbone.embed_dim
+        patch_size = backbone_model.patch_size
+        in_channels = BACKBONE_CHANNELS[backbone_name]
+        decoder = UPerHead(
+            input_shape={
+                "1": [embed_dim, patch_size * 4, patch_size * 4, 4],
+                "2": [embed_dim, patch_size * 2, patch_size * 2, 4],
+                "3": [embed_dim, patch_size, patch_size, 4],
+                "4": [embed_dim, int(patch_size / 2), int(patch_size / 2), 4],
+            },
+            in_channels=in_channels,
+            channels=hidden_dim // 4,  # UperNet typically uses 512 channels for hidden dim 2048
             num_classes=num_classes,
             ignore_value=255,
         )
